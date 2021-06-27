@@ -1,0 +1,208 @@
+#include <WiFi.h>
+#include "time.h"
+#include "DHT.h"
+
+#define BLYNK_PRINT Serial
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+
+#define DHTPIN 23
+#define DHTTYPE DHT22 //DHT22 AM2302
+
+#define switch1 19  //Active @Low
+#define switch2 18  //Active @Low
+#define switch3 5   //Active @Low
+#define switch4 17  //Active @Low
+#define relay1 26   //Active @Low
+#define relay2 25   //Active @Low
+#define relay3 33   //Active @Low
+#define relay4 32   //Active @Low
+
+//delay time
+
+unsigned long Switch1Time = 600000 ; //10minuets
+unsigned long Switch2Time = 600000 ; //10minuets
+unsigned long Switch3Time = 600000 ; //10minuets
+unsigned long Switch4Time = 600000 ; //10minuets
+unsigned long Time_Stamp = 10000 ; //10Sec
+unsigned long TimeH_Stamp = 2000 ; //10Sec
+unsigned long Humidity = 600000 ; //10minuets
+
+//keep time
+
+unsigned long Timer_1 ;
+unsigned long Timer_2 ;
+unsigned long Timer_3 ;
+unsigned long Timer_4 ;
+unsigned long Timer_time ;
+unsigned long Timer_timeH ;
+unsigned long Timer_temp ;
+
+//switch state
+
+int Switch1State = 0 ;
+int Switch2State = 0 ;
+int Switch3State = 0 ;
+int Switch4State = 0 ;
+int TimeState = 0 ;
+int HumidityState = 0 ;
+int TimeHState = 0 ;
+
+int Time = 0 ;
+
+int timeH ;
+
+WidgetLED led1(V0);
+WidgetLED led2(V1);
+WidgetLED led3(V2);
+
+char auth[] = "ZsNRXtV6iq8OaEmmu9_gQAv4CROHMIgA"; //Token
+char ssid[]     = "3BB-Thapra";
+char password[] = "0622693883";
+
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 21600;  //GMT+6
+const int   daylightOffset_sec = 3600;
+
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(switch1, INPUT );
+  pinMode(switch2, INPUT );
+  pinMode(switch3, INPUT );
+  pinMode(switch4, INPUT );
+  pinMode(relay1, OUTPUT);
+  pinMode(relay2, OUTPUT);
+  pinMode(relay3, OUTPUT);
+  pinMode(relay4, OUTPUT);
+  digitalWrite(relay1, 1); //off
+  digitalWrite(relay2, 1); //off
+  digitalWrite(relay3, 1); //off
+  digitalWrite(relay4, 1); //off
+
+  //Blynk Start
+  Blynk.begin(auth, ssid, password, "blynk-cloud.com", 80);
+
+  //DHT start
+  Serial.println(F("DHT22 Start!"));
+  dht.begin();
+
+  // Connect to Wi-Fi
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected.");
+
+  // Init and get the time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  printLocalTime();
+
+  //disconnect WiFi as it's no longer needed
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+
+}
+
+void loop() {
+  Blynk.run();
+  if (TimeState == 0) {
+    printLocalTime();
+    Timer_time = millis();
+    TimeState = 1;
+  }
+  if (TimeState == 1) {
+    if (millis() - Timer_time >= Time_Stamp) {
+      TimeState = 0 ;
+    }
+  }
+}
+
+void printLocalTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    Temp();
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  Serial.print("Day of week: ");
+  Serial.println(&timeinfo, "%A");
+  Serial.print("Month: ");
+  Serial.println(&timeinfo, "%B");
+  Serial.print("Day of Month: ");
+  Serial.println(&timeinfo, "%d");
+  Serial.print("Year: ");
+  Serial.println(&timeinfo, "%Y");
+  Serial.print("Hour: ");
+  Serial.println(&timeinfo, "%H");
+  Serial.print("Hour (12 hour format): ");
+  Serial.println(&timeinfo, "%I");
+  Serial.print("Minute: ");
+  Serial.println(&timeinfo, "%M");
+  Serial.print("Second: ");
+  Serial.println(&timeinfo, "%S");
+  Serial.println("Time variables");
+  char timeHour[3];
+  strftime(timeHour, 3, "%H", &timeinfo);
+  timeH = timeHour[3];
+  Serial.println(timeHour);
+  Serial.println(timeH);
+    if (timeH == 10 && TimeHState == 0) {
+      digitalWrite(relay1,0); //turn on
+      Timer_timeH = millis();
+      TimeHState = 1;
+  }
+  if (TimeHState == 1) {
+    if (millis() - Timer_timeH >= TimeH_Stamp) {
+      digitalWrite(relay1,1); //turn off
+      TimeHState = 0 ;
+    }
+  }
+  char timeWeekDay[10];
+  strftime(timeWeekDay, 10, "%A", &timeinfo);
+  Serial.println(timeWeekDay);
+  Serial.println();
+  Temp();
+}
+
+void Temp() {
+  delay(2000);   // Wait a few seconds between measurements.
+
+  // Reading temperature or humidity takes about 250 milliseconds!
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  float h = dht.readHumidity();
+  // Read temperature as Celsius (the default)
+  float t = dht.readTemperature();
+  // Read temperature as Fahrenheit (isFahrenheit = true)
+  float f = dht.readTemperature(true);
+
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(h) || isnan(t) || isnan(f)) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }
+
+  // Compute heat index in Fahrenheit (the default)
+  float hif = dht.computeHeatIndex(f, h);
+  // Compute heat index in Celsius (isFahreheit = false)
+  float hic = dht.computeHeatIndex(t, h, false);
+
+  Serial.print(F("Humidity: "));
+  Serial.print(h);
+  Serial.print(F("%  Temperature: "));
+  Serial.print(t);
+  Serial.print(F("°C "));
+  Serial.print(f);
+  Serial.print(F("°F  Heat index: "));
+  Serial.print(hic);
+  Serial.print(F("°C "));
+  Serial.print(hif);
+  Serial.println(F("°F"));
+  Serial.println();
+}
